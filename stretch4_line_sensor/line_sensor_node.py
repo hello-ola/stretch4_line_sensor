@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import traceback
 
 import numpy as np
 import rclpy
@@ -19,7 +20,11 @@ from stretch4_body.subsystem.line_sensor.line_sensor_utils import LineSensorCali
 from stretch4_line_sensor.diagnostics import LineSensorDiagnostics
 from stretch4_line_sensor.obstacle_filter import ObstacleFilter
 from stretch4_line_sensor.projector import LineSensorProjector, _numpy_to_pointcloud2
-from stretch4_line_sensor.raw_scan import build_raw_laserscan, sensor_name_to_optical_frame
+from stretch4_line_sensor.raw_scan import (
+    as_range_array,
+    build_raw_laserscan,
+    sensor_name_to_optical_frame,
+)
 
 
 class _CalibrationParamsHolder:
@@ -197,6 +202,13 @@ class LineSensorNode(Node):
         return self._calibration.apply_tare(ranges, sensor_name)
 
     def _timer_callback(self) -> None:
+        try:
+            self._timer_callback_impl()
+        except ValueError:
+            self.get_logger().exception('line_sensor timer callback failed')
+            raise
+
+    def _timer_callback_impl(self) -> None:
         self._robot_client.pull_status()
         status = self._robot_client.line_sensor_loop.status
         stamp = self.get_clock().now().to_msg()
@@ -206,8 +218,7 @@ class LineSensorNode(Node):
                 sensor_status = status.get(sensor_name, {})
                 if not isinstance(sensor_status, dict):
                     continue
-                ranges = sensor_status.get('ranges') or []
-                ranges_arr = np.asarray(ranges)
+                ranges_arr = as_range_array(sensor_status.get('ranges'))
                 if ranges_arr.size == 0:
                     continue
                 frame_id = sensor_name_to_optical_frame(sensor_name)
@@ -253,6 +264,7 @@ def main(args=None):
         node = LineSensorNode()
         rclpy.spin(node)
     except (RuntimeError, ValueError) as exc:
+        traceback.print_exc()
         print(f'line_sensor_node failed: {exc}', file=sys.stderr)
         if node is not None:
             node.destroy_node()

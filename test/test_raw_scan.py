@@ -7,9 +7,31 @@ import pytest
 from builtin_interfaces.msg import Time
 
 from stretch4_line_sensor.raw_scan import (
+    as_range_array,
+    as_scalar,
     build_raw_laserscan,
     sensor_name_to_optical_frame,
 )
+
+
+def test_as_range_array_numpy_input():
+    ranges = np.linspace(0.3, 0.5, 320)
+    arr = as_range_array(ranges)
+    assert arr.size == 320
+    assert arr.dtype == np.float64
+
+
+def test_as_range_array_none_is_empty():
+    arr = as_range_array(None)
+    assert arr.size == 0
+
+
+def test_as_scalar_numpy_array():
+    assert as_scalar(np.array([30.5])) == pytest.approx(30.5)
+
+
+def test_as_scalar_none_uses_default():
+    assert as_scalar(None, default=7.0) == pytest.approx(7.0)
 
 
 def test_sensor_name_to_optical_frame():

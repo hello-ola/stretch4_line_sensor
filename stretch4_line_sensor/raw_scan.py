@@ -18,6 +18,23 @@ def sensor_name_to_optical_frame(sensor_name: str) -> str:
     return f'line_sensor_{index}_optical_link'
 
 
+def as_range_array(ranges_raw) -> np.ndarray:
+    """Coerce line_sensor_loop ranges to float array (no truthiness on ndarray)."""
+    if ranges_raw is None:
+        return np.array([], dtype=np.float64)
+    return np.asarray(ranges_raw, dtype=np.float64)
+
+
+def as_scalar(value, default: float = 0.0) -> float:
+    """Coerce status fields to Python float (safe for numpy scalars/arrays)."""
+    if value is None:
+        return default
+    arr = np.asarray(value)
+    if arr.size == 0:
+        return default
+    return float(arr.flat[0])
+
+
 def build_raw_laserscan(
     ranges: np.ndarray,
     stamp: Time,

@@ -7,6 +7,8 @@ import time
 from diagnostic_msgs.msg import DiagnosticStatus
 from diagnostic_updater import Updater
 
+from stretch4_line_sensor.raw_scan import as_scalar
+
 
 class LineSensorDiagnostics:
     """Wrap diagnostic_updater tasks for line_sensor_loop status."""
@@ -45,18 +47,18 @@ class LineSensorDiagnostics:
         status = self._status
         now = time.time()
 
-        rate_hz = status.get('rate_hz', 0.0)
+        rate_hz = as_scalar(status.get('rate_hz', 0.0))
         stat.add('frame_rate_hz', f'{rate_hz:.1f}')
 
-        last_frame_time = status.get('last_frame_time', 0.0)
+        last_frame_time = as_scalar(status.get('last_frame_time', 0.0))
         if last_frame_time > 0:
             frame_age_s = now - last_frame_time
         else:
             frame_age_s = float('inf')
         stat.add('last_frame_age_ms', f'{frame_age_s * 1000.0:.1f}')
 
-        frame_advance_err = status.get('frame_advance_err', 0)
-        not_six_sensors_err = status.get('not_six_sensors_err', 0)
+        frame_advance_err = int(as_scalar(status.get('frame_advance_err', 0)))
+        not_six_sensors_err = int(as_scalar(status.get('not_six_sensors_err', 0)))
         stat.add('frame_advance_err', str(frame_advance_err))
         stat.add('not_six_sensors_err', str(not_six_sensors_err))
 
@@ -104,9 +106,9 @@ class LineSensorDiagnostics:
             sensor_status = self._status.get(sensor_name, {})
             if not isinstance(sensor_status, dict):
                 sensor_status = {}
-            ts_last_read = sensor_status.get('ts_last_read', 0.0)
-            frame_id = sensor_status.get('frame_id', 0)
-            rate_hz = sensor_status.get('rate_hz', 0.0)
+            ts_last_read = as_scalar(sensor_status.get('ts_last_read', 0.0))
+            frame_id = int(as_scalar(sensor_status.get('frame_id', 0)))
+            rate_hz = as_scalar(sensor_status.get('rate_hz', 0.0))
 
             if ts_last_read > 0:
                 age_s = time.time() - ts_last_read

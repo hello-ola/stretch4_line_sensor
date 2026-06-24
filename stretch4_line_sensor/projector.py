@@ -9,6 +9,7 @@ from sensor_msgs_py import point_cloud2
 from std_msgs.msg import Header
 
 from stretch4_body.subsystem.line_sensor.line_sensor_utils import LineSensorGeometry
+from stretch4_line_sensor.raw_scan import as_range_array
 
 
 def _numpy_to_pointcloud2(
@@ -100,8 +101,7 @@ class LineSensorProjector:
             sensor_status = status.get(sensor_name, {})
             if not isinstance(sensor_status, dict):
                 continue
-            ranges = sensor_status.get('ranges') or []
-            ranges_arr = np.asarray(ranges, dtype=np.float64)
+            ranges_arr = as_range_array(sensor_status.get('ranges'))
             if ranges_arr.size == 0:
                 continue
 
