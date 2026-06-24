@@ -50,6 +50,21 @@ def test_numpy_to_pointcloud2_empty():
     assert cloud.header.frame_id == 'base_link'
 
 
+def test_project_status_numpy_ranges(geometry_params, sensor_names):
+    projector = LineSensorProjector(
+        geometry_params=geometry_params,
+        sensor_names=sensor_names,
+        thresh_cliff_mm=10,
+        thresh_obstacle_mm=10,
+    )
+    ranges = np.linspace(0.3, 0.5, 320)
+    status = {'sensor_0': {'ranges': ranges}}
+    fused, obstacle_pts = projector.project_arrays(status=status, apply_tare=None)
+    assert fused.ndim == 2
+    assert fused.shape[1] == 3
+    assert obstacle_pts.ndim == 2
+
+
 def test_project_status_empty(geometry_params, sensor_names, capsys):
     projector = LineSensorProjector(
         geometry_params=geometry_params,

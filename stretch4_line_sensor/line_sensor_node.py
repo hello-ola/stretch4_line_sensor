@@ -204,7 +204,9 @@ class LineSensorNode(Node):
         if self._publish_raw_scans:
             for sensor_name in self._sensor_names:
                 sensor_status = status.get(sensor_name, {})
-                ranges = sensor_status.get('ranges', [])
+                if not isinstance(sensor_status, dict):
+                    continue
+                ranges = sensor_status.get('ranges') or []
                 ranges_arr = np.asarray(ranges)
                 if ranges_arr.size == 0:
                     continue
@@ -250,8 +252,8 @@ def main(args=None):
     try:
         node = LineSensorNode()
         rclpy.spin(node)
-    except RuntimeError as exc:
-        print(f'line_sensor_node failed to start: {exc}', file=sys.stderr)
+    except (RuntimeError, ValueError) as exc:
+        print(f'line_sensor_node failed: {exc}', file=sys.stderr)
         if node is not None:
             node.destroy_node()
         rclpy.shutdown()

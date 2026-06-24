@@ -98,7 +98,9 @@ class LineSensorProjector:
         all_points = []
         for sensor_idx, sensor_name in enumerate(self.sensor_names):
             sensor_status = status.get(sensor_name, {})
-            ranges = sensor_status.get('ranges', [])
+            if not isinstance(sensor_status, dict):
+                continue
+            ranges = sensor_status.get('ranges') or []
             ranges_arr = np.asarray(ranges, dtype=np.float64)
             if ranges_arr.size == 0:
                 continue

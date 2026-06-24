@@ -96,12 +96,14 @@ class LineSensorDiagnostics:
         self._last_frame_advance_err = frame_advance_err
         self._last_not_six_sensors_err = not_six_sensors_err
 
-        stat.summary(level=level, message=msg)
+        stat.summary(level, msg)
         return stat
 
     def _make_sensor_check(self, sensor_name: str):
         def check(stat: DiagnosticStatus) -> DiagnosticStatus:
             sensor_status = self._status.get(sensor_name, {})
+            if not isinstance(sensor_status, dict):
+                sensor_status = {}
             ts_last_read = sensor_status.get('ts_last_read', 0.0)
             frame_id = sensor_status.get('frame_id', 0)
             rate_hz = sensor_status.get('rate_hz', 0.0)
@@ -118,13 +120,13 @@ class LineSensorDiagnostics:
 
             if age_s > 0.2:
                 stat.summary(
-                    level=DiagnosticStatus.ERROR,
-                    message=f'{sensor_name} data stale',
+                    DiagnosticStatus.ERROR,
+                    f'{sensor_name} data stale',
                 )
             else:
                 stat.summary(
-                    level=DiagnosticStatus.OK,
-                    message=f'{sensor_name} ok',
+                    DiagnosticStatus.OK,
+                    f'{sensor_name} ok',
                 )
             return stat
 
