@@ -205,11 +205,12 @@ class LineSensorNode(Node):
             for sensor_name in self._sensor_names:
                 sensor_status = status.get(sensor_name, {})
                 ranges = sensor_status.get('ranges', [])
-                if not ranges:
+                ranges_arr = np.asarray(ranges)
+                if ranges_arr.size == 0:
                     continue
                 frame_id = sensor_name_to_optical_frame(sensor_name)
                 scan_msg = build_raw_laserscan(
-                    ranges=np.asarray(ranges),
+                    ranges=ranges_arr,
                     stamp=stamp,
                     frame_id=frame_id,
                     horizontal_fov_deg=self._horizontal_fov_deg,

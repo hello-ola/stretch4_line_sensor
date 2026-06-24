@@ -99,10 +99,10 @@ class LineSensorProjector:
         for sensor_idx, sensor_name in enumerate(self.sensor_names):
             sensor_status = status.get(sensor_name, {})
             ranges = sensor_status.get('ranges', [])
-            if not ranges:
+            ranges_arr = np.asarray(ranges, dtype=np.float64)
+            if ranges_arr.size == 0:
                 continue
 
-            ranges_arr = np.asarray(ranges, dtype=np.float64)
             if apply_tare is not None:
                 ranges_arr = apply_tare(ranges_arr, sensor_name)
 
