@@ -9,6 +9,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan, PointCloud2
+from std_msgs.msg import Header
 from std_srvs.srv import Trigger
 
 from stretch4_body.core.robot_params import RobotParams
@@ -16,7 +17,8 @@ from stretch4_body.robot.robot_client import RobotClient
 from stretch4_body.subsystem.line_sensor.line_sensor_utils import LineSensorCalibration
 
 from stretch4_line_sensor.diagnostics import LineSensorDiagnostics
-from stretch4_line_sensor.projector import LineSensorProjector
+from stretch4_line_sensor.obstacle_filter import ObstacleFilter
+from stretch4_line_sensor.projector import LineSensorProjector, _numpy_to_pointcloud2
 from stretch4_line_sensor.raw_scan import build_raw_laserscan, sensor_name_to_optical_frame
 
 
@@ -53,6 +55,32 @@ class LineSensorNode(Node):
         self.declare_parameter('publish_raw_scans', True)
         self.declare_parameter('scan_range_min', 0.05)
         self.declare_parameter('scan_range_max', 4.0)
+        self.declare_parameter('obstacle_filter_enabled', True)
+        self.declare_parameter('publish_unfiltered_obstacles', False)
+        self.declare_parameter(
+            'min_consecutive_frames',
+            int(cluster_params.get('min_consecutive_frames', 3)),
+        )
+        self.declare_parameter(
+            'cluster_eps',
+            float(cluster_params.get('cluster_eps', 0.03)),
+        )
+        self.declare_parameter(
+            'cluster_min_points',
+            int(cluster_params.get('cluster_min_points', 10)),
+        )
+        self.declare_parameter(
+            'min_cluster_width_m',
+            float(cluster_params.get('min_width', 0.01)),
+        )
+        self.declare_parameter(
+            'track_match_thresh_m',
+            float(cluster_params.get('match_thresh_m', 0.10)),
+        )
+        self.declare_parameter(
+            'track_max_age_s',
+            float(cluster_params.get('max_age_s', 1.0)),
+        )
 
         self._base_frame = self.get_parameter('base_frame').value
         self._apply_tare = self.get_parameter('apply_tare').value
@@ -66,6 +94,10 @@ class LineSensorNode(Node):
         scan_range_max = float(self.get_parameter('scan_range_max').value)
         self._horizontal_fov_deg = float(
             geometry_params.get('sensor_horizontal_fov_degrees', 103.0)
+        )
+        self._obstacle_filter_enabled = self.get_parameter('obstacle_filter_enabled').value
+        self._publish_unfiltered_obstacles = (
+            self.get_parameter('publish_unfiltered_obstacles').value
         )
 
         self._robot_client = RobotClient(ip_address=robot_client_ip)
@@ -102,6 +134,21 @@ class LineSensorNode(Node):
         self._obstacle_pub = self.create_publisher(
             PointCloud2, '/line_sensor/obstacle_points', 10,
         )
+        self._obstacle_unfiltered_pub = None
+        if self._publish_unfiltered_obstacles:
+            self._obstacle_unfiltered_pub = self.create_publisher(
+                PointCloud2, '/line_sensor/obstacle_points_unfiltered', 10,
+            )
+        self._obstacle_filter = None
+        if self._obstacle_filter_enabled:
+            self._obstacle_filter = ObstacleFilter(
+                cluster_eps=float(self.get_parameter('cluster_eps').value),
+                cluster_min_points=int(self.get_parameter('cluster_min_points').value),
+                min_cluster_width_m=float(self.get_parameter('min_cluster_width_m').value),
+                track_match_thresh_m=float(self.get_parameter('track_match_thresh_m').value),
+                track_max_age_s=float(self.get_parameter('track_max_age_s').value),
+                min_consecutive_frames=int(self.get_parameter('min_consecutive_frames').value),
+            )
         self._scan_pubs: dict[str, object] = {}
         if self._publish_raw_scans:
             for name in sensor_names:
@@ -118,7 +165,8 @@ class LineSensorNode(Node):
 
         self.get_logger().info(
             f'line_sensor_node started ({len(sensor_names)} sensors, '
-            f'{publish_rate:.1f} Hz, raw_scans={self._publish_raw_scans})'
+            f'{publish_rate:.1f} Hz, raw_scans={self._publish_raw_scans}, '
+            f'obstacle_filter={self._obstacle_filter_enabled})'
         )
 
     def _reload_calibration(self) -> None:
@@ -171,14 +219,22 @@ class LineSensorNode(Node):
                 self._scan_pubs[sensor_name].publish(scan_msg)
 
         apply_tare = self._apply_tare_fn if self._apply_tare else None
-        points_msg, obstacle_msg = self._projector.project_status(
+        fused, obstacle_pts = self._projector.project_arrays(
             status=status,
             apply_tare=apply_tare,
-            stamp=stamp,
-            frame_id=self._base_frame,
         )
-        self._points_pub.publish(points_msg)
-        self._obstacle_pub.publish(obstacle_msg)
+        header = Header(stamp=stamp, frame_id=self._base_frame)
+        self._points_pub.publish(_numpy_to_pointcloud2(fused, header))
+
+        if self._publish_unfiltered_obstacles and self._obstacle_unfiltered_pub is not None:
+            self._obstacle_unfiltered_pub.publish(
+                _numpy_to_pointcloud2(obstacle_pts, header),
+            )
+
+        if self._obstacle_filter is not None:
+            obstacle_pts = self._obstacle_filter.filter(obstacle_pts)
+
+        self._obstacle_pub.publish(_numpy_to_pointcloud2(obstacle_pts, header))
         self._diagnostics.update_status(status)
 
     def destroy_node(self) -> bool:

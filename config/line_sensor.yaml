@@ -10,3 +10,11 @@ line_sensor_node:
     scan_range_min: 0.05
     scan_range_max: 4.0
     robot_client_ip: "127.0.0.1"
+    obstacle_filter_enabled: true
+    publish_unfiltered_obstacles: false
+    min_consecutive_frames: 3
+    cluster_eps: 0.03
+    cluster_min_points: 10
+    min_cluster_width_m: 0.01
+    track_match_thresh_m: 0.10
+    track_max_age_s: 1.0

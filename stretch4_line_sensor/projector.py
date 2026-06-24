@@ -82,6 +82,19 @@ class LineSensorProjector:
         frame_id: str,
     ) -> tuple[PointCloud2, PointCloud2]:
         """Build fused and obstacle-filtered clouds from line_sensor_loop status."""
+        fused, obstacle_pts = self.project_arrays(status, apply_tare)
+        header = Header(stamp=stamp, frame_id=frame_id)
+        return (
+            _numpy_to_pointcloud2(fused, header),
+            _numpy_to_pointcloud2(obstacle_pts, header),
+        )
+
+    def project_arrays(
+        self,
+        status: dict,
+        apply_tare,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Project status to fused and Z-band obstacle numpy arrays."""
         all_points = []
         for sensor_idx, sensor_name in enumerate(self.sensor_names):
             sensor_status = status.get(sensor_name, {})
@@ -102,9 +115,8 @@ class LineSensorProjector:
             if len(pts) > 0:
                 all_points.append(pts)
 
-        header = Header(stamp=stamp, frame_id=frame_id)
         if not all_points:
-            empty = _numpy_to_pointcloud2(np.zeros((0, 3)), header)
+            empty = np.zeros((0, 3))
             return empty, empty
 
         fused = np.vstack(all_points)
@@ -113,7 +125,4 @@ class LineSensorProjector:
             self.thresh_cliff_mm,
             self.thresh_obstacle_mm,
         )
-        return (
-            _numpy_to_pointcloud2(fused, header),
-            _numpy_to_pointcloud2(obstacle_pts, header),
-        )
+        return fused, obstacle_pts

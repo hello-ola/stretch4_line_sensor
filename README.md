@@ -49,10 +49,32 @@ ros2 launch stretch4_line_sensor line_sensor.launch.py use_rviz:=true
 | Topic | Type | Frame | Description |
 |-------|------|-------|-------------|
 | `/line_sensor/points` | `sensor_msgs/PointCloud2` | `base_link` | Fused, tare-corrected ground points |
-| `/line_sensor/obstacle_points` | `sensor_msgs/PointCloud2` | `base_link` | Cliff and bump points (outside ground band) |
+| `/line_sensor/obstacle_points` | `sensor_msgs/PointCloud2` | `base_link` | Cliff/bump points after Z-band + spatial/temporal filtering |
+| `/line_sensor/obstacle_points_unfiltered` | `sensor_msgs/PointCloud2` | `base_link` | Z-band only (when `publish_unfiltered_obstacles:=true`) |
 | `/line_sensor/sensor_N/scan` | `sensor_msgs/LaserScan` | `line_sensor_N_optical_link` | Raw per-sensor ranges (no tare); N = 0..5 |
 
 Set `publish_raw_scans:=false` to disable the scan topics.
+
+## Obstacle filtering
+
+When `obstacle_filter_enabled:=true` (default), `/line_sensor/obstacle_points` applies:
+
+1. **Z-band filter** — remove floor returns (cliff/obstacle thresholds)
+2. **Spatial clustering (DBSCAN)** — drop isolated noise points and tiny clusters
+3. **Temporal persistence** — require `min_consecutive_frames` consecutive detections before publishing
+
+| Parameter | Default | Purpose |
+|-----------|---------|---------|
+| `obstacle_filter_enabled` | `true` | Enable spatial + temporal filtering |
+| `min_consecutive_frames` | `3` | Frames a cluster must persist (~100 ms @ 30 Hz) |
+| `cluster_eps` | `0.03` | DBSCAN neighborhood radius (m) |
+| `cluster_min_points` | `10` | Minimum points per cluster |
+| `min_cluster_width_m` | `0.01` | Minimum cluster extent (m) |
+| `track_match_thresh_m` | `0.10` | Max centroid motion between frames (m) |
+| `track_max_age_s` | `1.0` | Drop tracks not seen within this time |
+| `publish_unfiltered_obstacles` | `false` | Also publish Z-band-only cloud for debugging |
+
+Set `obstacle_filter_enabled:=false` to publish Z-band obstacles only (previous behavior).
 
 ## Services
 
