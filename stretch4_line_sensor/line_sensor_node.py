@@ -114,7 +114,6 @@ class LineSensorNode(Node):
             raise RuntimeError('line_sensor_loop not available on robot_server')
 
         self._calibration = LineSensorCalibration(_CalibrationParamsHolder(ls_params))
-        self._reload_calibration()
 
         self._projector = LineSensorProjector(
             geometry_params=geometry_params,
@@ -129,6 +128,7 @@ class LineSensorNode(Node):
         self._scan_range_max = scan_range_max
 
         self._diagnostics = LineSensorDiagnostics(self, sensor_names)
+        self._reload_calibration()
 
         self._points_pub = self.create_publisher(PointCloud2, '/line_sensor/points', 10)
         self._obstacle_pub = self.create_publisher(

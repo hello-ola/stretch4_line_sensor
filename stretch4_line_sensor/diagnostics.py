@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from diagnostic_msgs.msg import DiagnosticStatus
-from diagnostic_updater import DiagnosticTask, Updater
+from diagnostic_updater import Updater
 
 
 class LineSensorDiagnostics:
@@ -23,13 +23,12 @@ class LineSensorDiagnostics:
 
         self._updater = Updater(node)
         self._updater.setHardwareID('stretch4_line_sensor')
-        self._updater.add(DiagnosticTask('Line Sensor', self._check_overall))
+        self._updater.add('Line Sensor', self._check_overall)
         for name in sensor_names:
-            task = DiagnosticTask(
+            self._updater.add(
                 f'Line Sensor {name}',
                 self._make_sensor_check(name),
             )
-            self._updater.add(task)
 
     @property
     def updater(self) -> Updater:
