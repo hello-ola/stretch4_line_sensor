@@ -1,0 +1,119 @@
+"""Project line sensor ranges to PointCloud2 messages in base_link."""
+
+from __future__ import annotations
+
+import numpy as np
+from builtin_interfaces.msg import Time
+from sensor_msgs.msg import PointCloud2, PointField
+from sensor_msgs_py import point_cloud2
+from std_msgs.msg import Header
+
+from stretch4_body.subsystem.line_sensor.line_sensor_utils import LineSensorGeometry
+
+
+def _numpy_to_pointcloud2(
+    points: np.ndarray,
+    header: Header,
+) -> PointCloud2:
+    """Convert Nx3 float array to PointCloud2 with x, y, z, and z_deviation fields."""
+    if len(points) == 0:
+        return point_cloud2.create_cloud_xyz32(header, [])
+
+    structured = np.zeros(
+        len(points),
+        dtype=[
+            ('x', np.float32),
+            ('y', np.float32),
+            ('z', np.float32),
+            ('z_deviation', np.float32),
+        ],
+    )
+    structured['x'] = points[:, 0]
+    structured['y'] = points[:, 1]
+    structured['z'] = points[:, 2]
+    structured['z_deviation'] = points[:, 2]
+
+    fields = [
+        PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+        PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+        PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+        PointField(name='z_deviation', offset=12, datatype=PointField.FLOAT32, count=1),
+    ]
+    return point_cloud2.create_cloud(header, fields, structured)
+
+
+def filter_obstacle_points(
+    points: np.ndarray,
+    thresh_cliff_mm: float,
+    thresh_obstacle_mm: float,
+) -> np.ndarray:
+    """Keep points outside the ground band (cliffs below, obstacles above)."""
+    if len(points) == 0:
+        return points
+
+    z_min_exclude = -thresh_cliff_mm / 1000.0
+    z_max_exclude = thresh_obstacle_mm / 1000.0
+    mask_ground = (points[:, 2] > z_min_exclude) & (points[:, 2] < z_max_exclude)
+    return points[~mask_ground]
+
+
+class LineSensorProjector:
+    """Fuse per-sensor ranges into base_link point clouds."""
+
+    def __init__(
+        self,
+        geometry_params: dict,
+        sensor_names: list[str],
+        thresh_cliff_mm: float,
+        thresh_obstacle_mm: float,
+        max_range: float = 4.0,
+    ):
+        self.geometry = LineSensorGeometry(geometry_params)
+        self.sensor_names = sensor_names
+        self.thresh_cliff_mm = thresh_cliff_mm
+        self.thresh_obstacle_mm = thresh_obstacle_mm
+        self.max_range = max_range
+
+    def project_status(
+        self,
+        status: dict,
+        apply_tare,
+        stamp: Time,
+        frame_id: str,
+    ) -> tuple[PointCloud2, PointCloud2]:
+        """Build fused and obstacle-filtered clouds from line_sensor_loop status."""
+        all_points = []
+        for sensor_idx, sensor_name in enumerate(self.sensor_names):
+            sensor_status = status.get(sensor_name, {})
+            ranges = sensor_status.get('ranges', [])
+            if not ranges:
+                continue
+
+            ranges_arr = np.asarray(ranges, dtype=np.float64)
+            if apply_tare is not None:
+                ranges_arr = apply_tare(ranges_arr, sensor_name)
+
+            pts = self.geometry.get_sensor_points_in_robot_frame(sensor_idx, ranges_arr)
+            if len(pts) == 0:
+                continue
+
+            if self.max_range < float('inf'):
+                pts = pts[pts[:, 2] < self.max_range]
+            if len(pts) > 0:
+                all_points.append(pts)
+
+        header = Header(stamp=stamp, frame_id=frame_id)
+        if not all_points:
+            empty = _numpy_to_pointcloud2(np.zeros((0, 3)), header)
+            return empty, empty
+
+        fused = np.vstack(all_points)
+        obstacle_pts = filter_obstacle_points(
+            fused,
+            self.thresh_cliff_mm,
+            self.thresh_obstacle_mm,
+        )
+        return (
+            _numpy_to_pointcloud2(fused, header),
+            _numpy_to_pointcloud2(obstacle_pts, header),
+        )
