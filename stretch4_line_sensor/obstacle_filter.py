@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from stretch4_line_sensor.transform_utils import transform_point
+
 try:
     import open3d as o3d
 
@@ -17,7 +19,7 @@ except ImportError:
 
 @dataclass
 class _ObstacleTrack:
-    centroid: np.ndarray
+    tracking_centroid: np.ndarray
     points: np.ndarray
     consecutive_hits: int = 1
     last_seen: float = field(default_factory=time.time)
@@ -30,8 +32,12 @@ class ObstacleFilter:
     Pipeline:
     1. DBSCAN clustering to remove isolated noise points
     2. Drop clusters smaller than min_cluster_width_m
-    3. Match clusters to tracks across frames
+    3. Match clusters to tracks across frames (optionally in odom)
     4. Publish only tracks seen for min_consecutive_frames in a row
+
+    When base_to_tracking is provided, cluster centroids are transformed out
+    of base_link before matching so static obstacles stay fixed while the
+    robot moves. Published points remain in the input (base_link) frame.
     """
 
     def __init__(
@@ -52,7 +58,11 @@ class ObstacleFilter:
         self._tracks: dict[int, _ObstacleTrack] = {}
         self._next_track_id = 0
 
-    def filter(self, points: np.ndarray) -> np.ndarray:
+    def filter(
+        self,
+        points: np.ndarray,
+        base_to_tracking: np.ndarray | None = None,
+    ) -> np.ndarray:
         """Return obstacle points that pass spatial and temporal filters."""
         if len(points) == 0:
             self._prune_stale_tracks(time.time())
@@ -62,7 +72,7 @@ class ObstacleFilter:
             return points
 
         clusters = self._spatial_cluster(points)
-        return self._apply_temporal_filter(clusters)
+        return self._apply_temporal_filter(clusters, base_to_tracking)
 
     def _spatial_cluster(self, points: np.ndarray) -> list[np.ndarray]:
         pcd = o3d.geometry.PointCloud()
@@ -91,18 +101,38 @@ class ObstacleFilter:
 
         return clusters
 
-    def _apply_temporal_filter(self, clusters: list[np.ndarray]) -> np.ndarray:
+    def _cluster_tracking_centroid(
+        self,
+        cluster: np.ndarray,
+        base_to_tracking: np.ndarray | None,
+    ) -> np.ndarray:
+        centroid_base = np.mean(cluster, axis=0)
+        if base_to_tracking is None:
+            return centroid_base
+        return transform_point(base_to_tracking, centroid_base)
+
+    def _apply_temporal_filter(
+        self,
+        clusters: list[np.ndarray],
+        base_to_tracking: np.ndarray | None = None,
+    ) -> np.ndarray:
         now = time.time()
         matched_track_ids: set[int] = set()
-        centroids = [
-            np.mean(cluster, axis=0) for cluster in clusters if len(cluster) > 0
+        tracking_centroids = [
+            self._cluster_tracking_centroid(cluster, base_to_tracking)
+            for cluster in clusters
+            if len(cluster) > 0
         ]
 
         candidates: list[tuple[float, int, int]] = []
         active_ids = list(self._tracks.keys())
-        for cluster_idx, centroid in enumerate(centroids):
+        for cluster_idx, centroid in enumerate(tracking_centroids):
             for track_id in active_ids:
-                dist = float(np.linalg.norm(centroid - self._tracks[track_id].centroid))
+                dist = float(
+                    np.linalg.norm(
+                        centroid - self._tracks[track_id].tracking_centroid,
+                    )
+                )
                 if dist < self.track_match_thresh_m:
                     candidates.append((dist, cluster_idx, track_id))
 
@@ -119,11 +149,11 @@ class ObstacleFilter:
         confirmed_clusters: list[np.ndarray] = []
 
         for cluster_idx, cluster in enumerate(clusters):
-            centroid = centroids[cluster_idx]
+            tracking_centroid = tracking_centroids[cluster_idx]
             if cluster_idx in cluster_to_track:
                 track_id = cluster_to_track[cluster_idx]
                 track = self._tracks[track_id]
-                track.centroid = centroid
+                track.tracking_centroid = tracking_centroid
                 track.points = cluster
                 track.consecutive_hits += 1
                 track.last_seen = now
@@ -132,7 +162,7 @@ class ObstacleFilter:
                 track_id = self._next_track_id
                 self._next_track_id += 1
                 self._tracks[track_id] = _ObstacleTrack(
-                    centroid=centroid,
+                    tracking_centroid=tracking_centroid,
                     points=cluster,
                     consecutive_hits=1,
                     last_seen=now,

@@ -18,3 +18,6 @@ line_sensor_node:
     min_cluster_width_m: 0.01
     track_match_thresh_m: 0.10
     track_max_age_s: 1.0
+    odom_compensation_enabled: true
+    tracking_frame: wheel_odom
+    transform_timeout_s: 0.05

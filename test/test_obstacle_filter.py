@@ -47,3 +47,35 @@ def test_temporal_filter_matches_moving_cluster():
     filt._apply_temporal_filter([c1])
     out = filt._apply_temporal_filter([c2])
     assert out.shape[0] == 1
+
+
+def test_odom_compensation_keeps_static_track_while_base_frame_moves():
+    filt = ObstacleFilter(
+        min_consecutive_frames=2,
+        track_match_thresh_m=0.05,
+        track_max_age_s=10.0,
+    )
+    cluster1 = np.array([[0.50, 0.0, 0.05]])
+    cluster2 = np.array([[0.35, 0.0, 0.05]])
+
+    t1 = np.eye(4)
+    t2 = np.eye(4)
+    t2[0, 3] = 0.15
+
+    filt._apply_temporal_filter([cluster1], base_to_tracking=t1)
+    out = filt._apply_temporal_filter([cluster2], base_to_tracking=t2)
+    assert out.shape[0] == 1
+
+
+def test_without_odom_compensation_loses_track_on_large_motion():
+    filt = ObstacleFilter(
+        min_consecutive_frames=2,
+        track_match_thresh_m= 0.05,
+        track_max_age_s=10.0,
+    )
+    cluster1 = np.array([[0.50, 0.0, 0.05]])
+    cluster2 = np.array([[0.35, 0.0, 0.05]])
+
+    filt._apply_temporal_filter([cluster1])
+    out = filt._apply_temporal_filter([cluster2])
+    assert out.shape[0] == 0

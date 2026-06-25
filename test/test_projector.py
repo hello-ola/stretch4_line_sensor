@@ -31,11 +31,12 @@ def sensor_names():
 
 
 def test_filter_obstacle_points_removes_ground_band():
+    # Ground band with 10 mm thresholds: z in (-0.01, 0.01) is filtered out.
     points = np.array([
-        [0.0, 0.0, 0.0],
-        [0.1, 0.0, 0.02],
-        [0.2, 0.0, -0.02],
-        [0.3, 0.0, 0.05],
+        [0.0, 0.0, 0.0],       # on floor, removed
+        [0.1, 0.0, 0.005],     # 5 mm, inside band, removed
+        [0.2, 0.0, -0.02],     # cliff below -10 mm, kept
+        [0.3, 0.0, 0.05],      # obstacle above +10 mm, kept
     ])
     filtered = filter_obstacle_points(points, thresh_cliff_mm=10, thresh_obstacle_mm=10)
     assert len(filtered) == 2

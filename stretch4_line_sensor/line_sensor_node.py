@@ -8,10 +8,13 @@ import traceback
 
 import numpy as np
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan, PointCloud2
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
+from tf2_ros import Buffer, TransformListener
 
 from stretch4_body.core.robot_params import RobotParams
 from stretch4_body.robot.robot_client import RobotClient
@@ -20,6 +23,7 @@ from stretch4_body.subsystem.line_sensor.line_sensor_utils import LineSensorCali
 from stretch4_line_sensor.diagnostics import LineSensorDiagnostics
 from stretch4_line_sensor.obstacle_filter import ObstacleFilter
 from stretch4_line_sensor.projector import LineSensorProjector, _numpy_to_pointcloud2
+from stretch4_line_sensor.transform_utils import translation_rotation_to_matrix
 from stretch4_line_sensor.raw_scan import (
     as_range_array,
     build_raw_laserscan,
@@ -86,6 +90,9 @@ class LineSensorNode(Node):
             'track_max_age_s',
             float(cluster_params.get('max_age_s', 1.0)),
         )
+        self.declare_parameter('odom_compensation_enabled', True)
+        self.declare_parameter('tracking_frame', 'wheel_odom')
+        self.declare_parameter('transform_timeout_s', 0.05)
 
         self._base_frame = self.get_parameter('base_frame').value
         self._apply_tare = self.get_parameter('apply_tare').value
@@ -104,6 +111,18 @@ class LineSensorNode(Node):
         self._publish_unfiltered_obstacles = (
             self.get_parameter('publish_unfiltered_obstacles').value
         )
+        self._odom_compensation_enabled = (
+            self.get_parameter('odom_compensation_enabled').value
+        )
+        self._tracking_frame = self.get_parameter('tracking_frame').value
+        self._transform_timeout_s = float(
+            self.get_parameter('transform_timeout_s').value,
+        )
+        self._tf_buffer = None
+        self._tf_listener = None
+        if self._obstacle_filter_enabled and self._odom_compensation_enabled:
+            self._tf_buffer = Buffer()
+            self._tf_listener = TransformListener(self._tf_buffer, self)
 
         self._robot_client = RobotClient(ip_address=robot_client_ip)
         if not self._robot_client.startup():
@@ -168,10 +187,15 @@ class LineSensorNode(Node):
         timer_period = 1.0 / max(publish_rate, 1.0)
         self._timer = self.create_timer(timer_period, self._timer_callback)
 
+        odom_msg = (
+            f'tracking_frame={self._tracking_frame}'
+            if self._odom_compensation_enabled and self._obstacle_filter_enabled
+            else 'odom_compensation=off'
+        )
         self.get_logger().info(
             f'line_sensor_node started ({len(sensor_names)} sensors, '
             f'{publish_rate:.1f} Hz, raw_scans={self._publish_raw_scans}, '
-            f'obstacle_filter={self._obstacle_filter_enabled})'
+            f'obstacle_filter={self._obstacle_filter_enabled}, {odom_msg})'
         )
 
     def _reload_calibration(self) -> None:
@@ -200,6 +224,30 @@ class LineSensorNode(Node):
 
     def _apply_tare_fn(self, ranges: np.ndarray, sensor_name: str) -> np.ndarray:
         return self._calibration.apply_tare(ranges, sensor_name)
+
+    def _lookup_base_to_tracking(self, stamp) -> np.ndarray | None:
+        if not self._odom_compensation_enabled or self._tf_buffer is None:
+            return None
+
+        try:
+            transform = self._tf_buffer.lookup_transform(
+                self._tracking_frame,
+                self._base_frame,
+                Time.from_msg(stamp),
+                timeout=Duration(seconds=self._transform_timeout_s),
+            )
+            t = transform.transform.translation
+            q = transform.transform.rotation
+            return translation_rotation_to_matrix(
+                t.x, t.y, t.z, q.x, q.y, q.z, q.w,
+            )
+        except Exception as exc:
+            self.get_logger().warning(
+                f'TF {self._base_frame}->{self._tracking_frame} unavailable, '
+                f'using base_link tracking: {exc}',
+                throttle_duration_sec=5.0,
+            )
+            return None
 
     def _timer_callback(self) -> None:
         try:
@@ -246,7 +294,11 @@ class LineSensorNode(Node):
             )
 
         if self._obstacle_filter is not None:
-            obstacle_pts = self._obstacle_filter.filter(obstacle_pts)
+            base_to_tracking = self._lookup_base_to_tracking(stamp)
+            obstacle_pts = self._obstacle_filter.filter(
+                obstacle_pts,
+                base_to_tracking=base_to_tracking,
+            )
 
         self._obstacle_pub.publish(_numpy_to_pointcloud2(obstacle_pts, header))
         self._diagnostics.update_status(status)
