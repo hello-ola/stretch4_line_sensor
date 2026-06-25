@@ -6,12 +6,12 @@ line_sensor_node:
     max_range: 4.0
     thresh_cliff_mm: 10.0
     thresh_obstacle_mm: 10.0
-    publish_raw_scans: true
+    publish_raw_scans: false #true
     scan_range_min: 0.05
     scan_range_max: 4.0
     robot_client_ip: "127.0.0.1"
     obstacle_filter_enabled: true
-    publish_unfiltered_obstacles: false
+    publish_unfiltered_obstacles: true
     min_consecutive_frames: 3
     cluster_eps: 0.03
     cluster_min_points: 10

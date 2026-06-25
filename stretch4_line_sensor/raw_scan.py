@@ -17,6 +17,12 @@ def sensor_name_to_optical_frame(sensor_name: str) -> str:
     index = sensor_name.split('_', 1)[1]
     return f'line_sensor_{index}_optical_link'
 
+def sensor_name_to_frame(sensor_name: str) -> str:
+    """Map stretch4_body sensor_N to stretch4_urdf line_sensor_N_link."""
+    if not sensor_name.startswith('sensor_'):
+        raise ValueError(f'Unexpected sensor name: {sensor_name}')
+    index = sensor_name.split('_', 1)[1]
+    return f'line_sensor_{index}_link'
 
 def as_range_array(ranges_raw) -> np.ndarray:
     """Coerce line_sensor_loop ranges to float array (no truthiness on ndarray)."""

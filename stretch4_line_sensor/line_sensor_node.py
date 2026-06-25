@@ -15,6 +15,7 @@ from sensor_msgs.msg import LaserScan, PointCloud2
 from std_msgs.msg import Header
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformListener
+from rclpy.qos import qos_profile_sensor_data
 
 from stretch4_body.core.robot_params import RobotParams
 from stretch4_body.robot.robot_client import RobotClient
@@ -28,6 +29,7 @@ from stretch4_line_sensor.raw_scan import (
     as_range_array,
     build_raw_laserscan,
     sensor_name_to_optical_frame,
+    sensor_name_to_frame,
 )
 
 
@@ -154,14 +156,14 @@ class LineSensorNode(Node):
         self._diagnostics = LineSensorDiagnostics(self, sensor_names)
         self._reload_calibration()
 
-        self._points_pub = self.create_publisher(PointCloud2, '/line_sensor/points', 10)
+        self._points_pub = self.create_publisher(PointCloud2, '/line_sensor/points', qos_profile_sensor_data)
         self._obstacle_pub = self.create_publisher(
-            PointCloud2, '/line_sensor/obstacle_points', 10,
+            PointCloud2, '/line_sensor/obstacle_points', qos_profile_sensor_data
         )
         self._obstacle_unfiltered_pub = None
         if self._publish_unfiltered_obstacles:
             self._obstacle_unfiltered_pub = self.create_publisher(
-                PointCloud2, '/line_sensor/obstacle_points_unfiltered', 10,
+                PointCloud2, '/line_sensor/obstacle_points_unfiltered', qos_profile_sensor_data
             )
         self._obstacle_filter = None
         if self._obstacle_filter_enabled:
@@ -177,7 +179,7 @@ class LineSensorNode(Node):
         if self._publish_raw_scans:
             for name in sensor_names:
                 topic = f'/line_sensor/{name}/scan'
-                self._scan_pubs[name] = self.create_publisher(LaserScan, topic, 10)
+                self._scan_pubs[name] = self.create_publisher(LaserScan, topic, qos_profile_sensor_data)
         self._reload_srv = self.create_service(
             Trigger,
             '/line_sensor/reload_calibration',
@@ -269,7 +271,7 @@ class LineSensorNode(Node):
                 ranges_arr = as_range_array(sensor_status.get('ranges'))
                 if ranges_arr.size == 0:
                     continue
-                frame_id = sensor_name_to_optical_frame(sensor_name)
+                frame_id = sensor_name_to_frame(sensor_name)
                 scan_msg = build_raw_laserscan(
                     ranges=ranges_arr,
                     stamp=stamp,
