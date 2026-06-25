@@ -49,17 +49,21 @@ ros2 launch stretch4_line_sensor line_sensor.launch.py use_rviz:=true
 | Topic | Type | Frame | Description |
 |-------|------|-------|-------------|
 | `/line_sensor/points` | `sensor_msgs/PointCloud2` | `base_link` | Fused, tare-corrected ground points |
-| `/line_sensor/obstacle_points` | `sensor_msgs/PointCloud2` | `base_link` | Cliff/bump points after Z-band + spatial/temporal filtering |
-| `/line_sensor/obstacle_points_unfiltered` | `sensor_msgs/PointCloud2` | `base_link` | Z-band only (when `publish_unfiltered_obstacles:=true`) |
+| `/line_sensor/cliff_points` | `sensor_msgs/PointCloud2` | `base_link` | Drop-off/cliff points below the floor band after spatial/temporal filtering |
+| `/line_sensor/obstacle_points` | `sensor_msgs/PointCloud2` | `base_link` | Above-floor bump/obstacle points after spatial/temporal filtering |
+| `/line_sensor/cliff_points_unfiltered` | `sensor_msgs/PointCloud2` | `base_link` | Cliff points after Z-band only (when `publish_unfiltered_obstacles:=true`) |
+| `/line_sensor/obstacle_points_unfiltered` | `sensor_msgs/PointCloud2` | `base_link` | Above-floor obstacle points after Z-band only (when `publish_unfiltered_obstacles:=true`) |
 | `/line_sensor/sensor_N/scan` | `sensor_msgs/LaserScan` | `line_sensor_N_optical_link` | Raw per-sensor ranges (no tare); N = 0..5 |
 
 Set `publish_raw_scans:=false` to disable the scan topics.
 
 ## Obstacle filtering
 
-When `obstacle_filter_enabled:=true` (default), `/line_sensor/obstacle_points` applies:
+When `obstacle_filter_enabled:=true` (default), `/line_sensor/cliff_points`
+and `/line_sensor/obstacle_points` apply:
 
-1. **Z-band filter** — remove floor returns (cliff/obstacle thresholds)
+1. **Z-band split** — remove floor returns, then split cliffs below the
+   cliff threshold from obstacles above the obstacle threshold
 2. **Spatial clustering (DBSCAN)** — drop isolated noise points and tiny clusters
 3. **Temporal persistence** — require `min_consecutive_frames` consecutive detections before publishing
 

@@ -58,6 +58,23 @@ def filter_obstacle_points(
     return points[~mask_ground]
 
 
+def split_cliff_obstacle_points(
+    points: np.ndarray,
+    thresh_cliff_mm: float,
+    thresh_obstacle_mm: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Split Z-band hazard points into cliffs below and obstacles above floor."""
+    if len(points) == 0:
+        empty = np.zeros((0, 3))
+        return empty, empty
+
+    z_min_exclude = -thresh_cliff_mm / 1000.0
+    z_max_exclude = thresh_obstacle_mm / 1000.0
+    cliff_pts = points[points[:, 2] <= z_min_exclude]
+    obstacle_pts = points[points[:, 2] >= z_max_exclude]
+    return cliff_pts, obstacle_pts
+
+
 class LineSensorProjector:
     """Fuse per-sensor ranges into base_link point clouds."""
 
@@ -96,6 +113,20 @@ class LineSensorProjector:
         apply_tare,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Project status to fused and Z-band obstacle numpy arrays."""
+        fused, _, _ = self.project_arrays_split(status, apply_tare)
+        hazard_pts = filter_obstacle_points(
+            fused,
+            self.thresh_cliff_mm,
+            self.thresh_obstacle_mm,
+        )
+        return fused, hazard_pts
+
+    def project_arrays_split(
+        self,
+        status: dict,
+        apply_tare,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Project status to fused, cliff, and above-floor obstacle arrays."""
         all_points = []
         for sensor_idx, sensor_name in enumerate(self.sensor_names):
             sensor_status = status.get(sensor_name, {})
@@ -119,12 +150,12 @@ class LineSensorProjector:
 
         if not all_points:
             empty = np.zeros((0, 3))
-            return empty, empty
+            return empty, empty, empty
 
         fused = np.vstack(all_points)
-        obstacle_pts = filter_obstacle_points(
+        cliff_pts, obstacle_pts = split_cliff_obstacle_points(
             fused,
             self.thresh_cliff_mm,
             self.thresh_obstacle_mm,
         )
-        return fused, obstacle_pts
+        return fused, cliff_pts, obstacle_pts

@@ -157,16 +157,33 @@ class LineSensorNode(Node):
         self._reload_calibration()
 
         self._points_pub = self.create_publisher(PointCloud2, '/line_sensor/points', qos_profile_sensor_data)
+        self._cliff_pub = self.create_publisher(
+            PointCloud2, '/line_sensor/cliff_points', qos_profile_sensor_data
+        )
         self._obstacle_pub = self.create_publisher(
             PointCloud2, '/line_sensor/obstacle_points', qos_profile_sensor_data
         )
+        self._cliff_unfiltered_pub = None
         self._obstacle_unfiltered_pub = None
         if self._publish_unfiltered_obstacles:
+            self._cliff_unfiltered_pub = self.create_publisher(
+                PointCloud2, '/line_sensor/cliff_points_unfiltered',
+                qos_profile_sensor_data,
+            )
             self._obstacle_unfiltered_pub = self.create_publisher(
                 PointCloud2, '/line_sensor/obstacle_points_unfiltered', qos_profile_sensor_data
             )
+        self._cliff_filter = None
         self._obstacle_filter = None
         if self._obstacle_filter_enabled:
+            self._cliff_filter = ObstacleFilter(
+                cluster_eps=float(self.get_parameter('cluster_eps').value),
+                cluster_min_points=int(self.get_parameter('cluster_min_points').value),
+                min_cluster_width_m=float(self.get_parameter('min_cluster_width_m').value),
+                track_match_thresh_m=float(self.get_parameter('track_match_thresh_m').value),
+                track_max_age_s=float(self.get_parameter('track_max_age_s').value),
+                min_consecutive_frames=int(self.get_parameter('min_consecutive_frames').value),
+            )
             self._obstacle_filter = ObstacleFilter(
                 cluster_eps=float(self.get_parameter('cluster_eps').value),
                 cluster_min_points=int(self.get_parameter('cluster_min_points').value),
@@ -227,7 +244,7 @@ class LineSensorNode(Node):
     def _apply_tare_fn(self, ranges: np.ndarray, sensor_name: str) -> np.ndarray:
         return self._calibration.apply_tare(ranges, sensor_name)
 
-    def _lookup_base_to_tracking(self, stamp) -> np.ndarray | None:
+    def _lookup_base_to_tracking(self) -> np.ndarray | None:
         if not self._odom_compensation_enabled or self._tf_buffer is None:
             return None
 
@@ -235,7 +252,7 @@ class LineSensorNode(Node):
             transform = self._tf_buffer.lookup_transform(
                 self._tracking_frame,
                 self._base_frame,
-                Time.from_msg(stamp),
+                Time(),
                 timeout=Duration(seconds=self._transform_timeout_s),
             )
             t = transform.transform.translation
@@ -283,7 +300,7 @@ class LineSensorNode(Node):
                 self._scan_pubs[sensor_name].publish(scan_msg)
 
         apply_tare = self._apply_tare_fn if self._apply_tare else None
-        fused, obstacle_pts = self._projector.project_arrays(
+        fused, cliff_pts, obstacle_pts = self._projector.project_arrays_split(
             status=status,
             apply_tare=apply_tare,
         )
@@ -291,17 +308,26 @@ class LineSensorNode(Node):
         self._points_pub.publish(_numpy_to_pointcloud2(fused, header))
 
         if self._publish_unfiltered_obstacles and self._obstacle_unfiltered_pub is not None:
+            if self._cliff_unfiltered_pub is not None:
+                self._cliff_unfiltered_pub.publish(
+                    _numpy_to_pointcloud2(cliff_pts, header),
+                )
             self._obstacle_unfiltered_pub.publish(
                 _numpy_to_pointcloud2(obstacle_pts, header),
             )
 
-        if self._obstacle_filter is not None:
-            base_to_tracking = self._lookup_base_to_tracking(stamp)
+        if self._cliff_filter is not None and self._obstacle_filter is not None:
+            base_to_tracking = self._lookup_base_to_tracking()
+            cliff_pts = self._cliff_filter.filter(
+                cliff_pts,
+                base_to_tracking=base_to_tracking,
+            )
             obstacle_pts = self._obstacle_filter.filter(
                 obstacle_pts,
                 base_to_tracking=base_to_tracking,
             )
 
+        self._cliff_pub.publish(_numpy_to_pointcloud2(cliff_pts, header))
         self._obstacle_pub.publish(_numpy_to_pointcloud2(obstacle_pts, header))
         self._diagnostics.update_status(status)
 

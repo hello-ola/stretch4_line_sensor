@@ -8,6 +8,7 @@ from std_msgs.msg import Header
 from stretch4_line_sensor.projector import (
     LineSensorProjector,
     filter_obstacle_points,
+    split_cliff_obstacle_points,
     _numpy_to_pointcloud2,
 )
 
@@ -44,6 +45,24 @@ def test_filter_obstacle_points_removes_ground_band():
     assert filtered[1, 2] == 0.05
 
 
+def test_split_cliff_obstacle_points_separates_z_bands():
+    points = np.array([
+        [0.0, 0.0, 0.0],
+        [0.1, 0.0, -0.02],
+        [0.2, 0.0, 0.05],
+    ])
+
+    cliffs, obstacles = split_cliff_obstacle_points(
+        points,
+        thresh_cliff_mm=10,
+        thresh_obstacle_mm=10,
+    )
+    assert len(cliffs) == 1
+    assert len(obstacles) == 1
+    assert cliffs[0, 2] == -0.02
+    assert obstacles[0, 2] == 0.05
+
+
 def test_numpy_to_pointcloud2_empty():
     header = Header(stamp=Time(sec=0, nanosec=0), frame_id='base_link')
     cloud = _numpy_to_pointcloud2(np.zeros((0, 3)), header)
@@ -63,6 +82,26 @@ def test_project_status_numpy_ranges(geometry_params, sensor_names):
     fused, obstacle_pts = projector.project_arrays(status=status, apply_tare=None)
     assert fused.ndim == 2
     assert fused.shape[1] == 3
+    assert obstacle_pts.ndim == 2
+
+
+def test_project_arrays_split_returns_cliffs_and_obstacles(
+    geometry_params,
+    sensor_names,
+):
+    projector = LineSensorProjector(
+        geometry_params=geometry_params,
+        sensor_names=sensor_names,
+        thresh_cliff_mm=10,
+        thresh_obstacle_mm=10,
+    )
+    status = {'sensor_0': {'ranges': np.linspace(0.3, 0.5, 320)}}
+    fused, cliff_pts, obstacle_pts = projector.project_arrays_split(
+        status=status,
+        apply_tare=None,
+    )
+    assert fused.ndim == 2
+    assert cliff_pts.ndim == 2
     assert obstacle_pts.ndim == 2
 
 
