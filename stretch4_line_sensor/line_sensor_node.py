@@ -249,6 +249,12 @@ class LineSensorNode(Node):
             return None
 
         try:
+            # transform = self._tf_buffer.lookup_transform(
+            #     self._tracking_frame,
+            #     self._base_frame,
+            #     Time.from_msg(stamp),
+            #     timeout=Duration(seconds=self._transform_timeout_s),
+            # )
             transform = self._tf_buffer.lookup_transform(
                 self._tracking_frame,
                 self._base_frame,

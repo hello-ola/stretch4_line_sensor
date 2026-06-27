@@ -5,7 +5,7 @@ line_sensor_node:
     publish_rate: 30.0
     max_range: 4.0
     thresh_cliff_mm: 10.0
-    thresh_obstacle_mm: 10.0
+    thresh_obstacle_mm: 20.0 #35.0
     publish_raw_scans: false #true
     scan_range_min: 0.05
     scan_range_max: 4.0
